@@ -59,6 +59,9 @@ app.use(cors({
   origin: process.env.FRONTEND_ORIGIN || "*",
   methods: ["GET", "POST"],
 }));
+app.get("/health", (req, res) => {
+  res.json({ status: "ok", service: "nikkashi-backend" });
+});
 
 // ─────────────────────────────────────────────────────────────────
 // HELPERS
