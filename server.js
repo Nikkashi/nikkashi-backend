@@ -567,7 +567,7 @@ cron.schedule("*/30 * * * *", async () => {
 // ─────────────────────────────────────────────────────────────────
 // START SERVER
 // ─────────────────────────────────────────────────────────────────
-const PORT = process.env.PORT || 5000;
+const PORT = process.env.PORT || 8080;
 app.listen(PORT, () => {
   console.log(`\n🚀 POP by Nikkashi Backend running on port ${PORT}`);
   console.log(`   Health: http://localhost:${PORT}/health`);
