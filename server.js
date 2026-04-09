@@ -22,7 +22,7 @@ let db = null;
 
 function initFirebase() {
   try {
-    const serviceAccount = require("./firebase-key.json");
+    const serviceAccount = JSON.parse(process.env.FIREBASE_KEY);
     admin.initializeApp({
       credential: admin.credential.cert(serviceAccount),
     });
