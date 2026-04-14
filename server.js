@@ -22,16 +22,26 @@ let db = null;
 
 function initFirebase() {
   try {
-    const serviceAccount = JSON.parse(process.env.FIREBASE_KEY);
+    let serviceAccount;
+
+    if (process.env.FIREBASE_SERVICE_ACCOUNT) {
+      // Railway / production: read from environment variable
+      serviceAccount = JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT);
+    } else {
+      // Local development fallback: read from file
+      serviceAccount = require("./firebase-key.json");
+    }
+
     admin.initializeApp({
       credential: admin.credential.cert(serviceAccount),
     });
     db = admin.firestore();
     console.log("✅ Firebase connected");
   } catch (e) {
-    console.warn("⚠️  Firebase not configured (firebase-key.json missing).");
+    console.warn("⚠️  Firebase not configured.");
+    console.warn("   Set FIREBASE_SERVICE_ACCOUNT env variable (Railway)");
+    console.warn("   or place firebase-key.json in project root (local).");
     console.warn("   Orders will be stored in memory only.");
-    console.warn("   See README.md for setup instructions.");
   }
 }
 initFirebase();
@@ -59,6 +69,7 @@ app.use(cors({
   origin: process.env.FRONTEND_ORIGIN || "*",
   methods: ["GET", "POST"],
 }));
+
 // ─────────────────────────────────────────────────────────────────
 // HELPERS
 // ─────────────────────────────────────────────────────────────────
@@ -335,13 +346,24 @@ app.post("/save-cart", async (req, res) => {
 //  GET /inventory
 // ═══════════════════════════════════════════════════════════════
 // ─────────────────────────────────────────────────────────────────
+app.get("/products", async (req, res) => {
+  try {
+    const snap = await db.collection("products").get();
+    const products = [];
+    snap.forEach((d) => { products.push({ id: d.id, ...d.data() }); });
+    res.json(products);
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
 app.get("/inventory", async (req, res) => {
   try {
     if (db) {
       const snap = await db.collection("products").get();
       const products = {};
       snap.forEach((d) => { products[d.id] = d.data(); });
-      res.json(products);
+      res.json(Object.values(products));
     } else {
       res.json({ message: "Firebase not configured — using frontend localStorage stock" });
     }
@@ -399,85 +421,83 @@ app.post("/seed-products", async (req, res) => {
   if (!db) return res.status(503).json({ error: "Firebase not configured" });
 
   const products = [
-    { sku:"BR01", name:"Cool Sequin Beaded Patch/Appliqué", category:"Other", price:299, stock:1, image:"https://firebasestorage.googleapis.com/v0/b/pop-by-nikkashi-7f354.firebasestorage.app/o%2FBR01.jpg?alt=media", emoji:"🌟" },
-    { sku:"BR02", name:"Beaded Seed Bead Mismatched Earring Set", category:"Earring", price:299, stock:1, image:"https://firebasestorage.googleapis.com/v0/b/pop-by-nikkashi-7f354.firebasestorage.app/o%2FBR02.jpg?alt=media", emoji:"💎" },
-    { sku:"BR03", name:"Beaded Floral Spiral Brooch", category:"Brooch", price:299, stock:1, image:"https://firebasestorage.googleapis.com/v0/b/pop-by-nikkashi-7f354.firebasestorage.app/o%2FBR03.jpg?alt=media", emoji:"📌" },
-    { sku:"BR04", name:"Evil Eye Multicolour Beaded Brooch", category:"Brooch", price:299, stock:1, image:"https://firebasestorage.googleapis.com/v0/b/pop-by-nikkashi-7f354.firebasestorage.app/o%2FBR04.jpg?alt=media", emoji:"📌" },
-    { sku:"BR05", name:"Evil Eye Beaded Crystal Brooch", category:"Brooch", price:299, stock:1, image:"https://firebasestorage.googleapis.com/v0/b/pop-by-nikkashi-7f354.firebasestorage.app/o%2FBR05.jpg?alt=media", emoji:"📌" },
-    { sku:"BR06", name:"LOVE Star Beaded Sequin Patch Brooch", category:"Brooch", price:299, stock:1, image:"https://firebasestorage.googleapis.com/v0/b/pop-by-nikkashi-7f354.firebasestorage.app/o%2FBR06.jpg?alt=media", emoji:"📌" },
-    { sku:"BR07", name:"Butterfly Beaded Embroidered Brooch", category:"Brooch", price:299, stock:1, image:"https://firebasestorage.googleapis.com/v0/b/pop-by-nikkashi-7f354.firebasestorage.app/o%2FBR07.jpg?alt=media", emoji:"📌" },
-    { sku:"BR08", name:"Beaded Camera Motif Brooch", category:"Brooch", price:299, stock:1, image:"https://firebasestorage.googleapis.com/v0/b/pop-by-nikkashi-7f354.firebasestorage.app/o%2FBR08.jpg?alt=media", emoji:"📌" },
-    { sku:"BR09", name:"Soccer Ball Beaded Brooch", category:"Brooch", price:299, stock:1, image:"https://firebasestorage.googleapis.com/v0/b/pop-by-nikkashi-7f354.firebasestorage.app/o%2FBR09.jpg?alt=media", emoji:"📌" },
-    { sku:"BR10", name:"OMG! Speech Bubble Beaded Brooch", category:"Brooch", price:299, stock:1, image:"https://firebasestorage.googleapis.com/v0/b/pop-by-nikkashi-7f354.firebasestorage.app/o%2FBR10.jpg?alt=media", emoji:"📌" },
-    { sku:"EAR01", name:"Beaded Floral Embroidered Stud Earrings", category:"Earring", price:349, stock:1, image:"https://firebasestorage.googleapis.com/v0/b/pop-by-nikkashi-7f354.firebasestorage.app/o%2FEAR01.jpg?alt=media", emoji:"💎" },
-    { sku:"EAR02", name:"Beaded Floral Embroidered Stud Earrings", category:"Earring", price:349, stock:1, image:"https://firebasestorage.googleapis.com/v0/b/pop-by-nikkashi-7f354.firebasestorage.app/o%2FEAR02.jpg?alt=media", emoji:"💎" },
-    { sku:"EAR03", name:"Lemon Slice Beaded Embroidered Patch Earring", category:"Earring", price:349, stock:1, image:"https://firebasestorage.googleapis.com/v0/b/pop-by-nikkashi-7f354.firebasestorage.app/o%2FEAR03.jpg?alt=media", emoji:"💎" },
-    { sku:"EAR04", name:"Beaded Floral Embroidered Stud Earrings", category:"Earring", price:349, stock:1, image:"https://firebasestorage.googleapis.com/v0/b/pop-by-nikkashi-7f354.firebasestorage.app/o%2FEAR04.jpg?alt=media", emoji:"💎" },
-    { sku:"EAR05", name:"Blue Floral Beaded Embroidered Stud Earrings", category:"Earring", price:349, stock:1, image:"https://firebasestorage.googleapis.com/v0/b/pop-by-nikkashi-7f354.firebasestorage.app/o%2FEAR05.jpg?alt=media", emoji:"💎" },
-    { sku:"EAR06", name:"Beaded Floral Heart & Round Stud Earrings", category:"Earring", price:349, stock:1, image:"https://firebasestorage.googleapis.com/v0/b/pop-by-nikkashi-7f354.firebasestorage.app/o%2FEAR06.jpg?alt=media", emoji:"💎" },
-    { sku:"EAR07", name:"Neon Daisy Floral Clip-On Earrings", category:"Earring", price:399, stock:1, image:"https://firebasestorage.googleapis.com/v0/b/pop-by-nikkashi-7f354.firebasestorage.app/o%2FEAR07.jpg?alt=media", emoji:"💎" },
-    { sku:"EAR08", name:"Sunflower Fan Brooch with Hematite Petals", category:"Earring", price:399, stock:1, image:"https://firebasestorage.googleapis.com/v0/b/pop-by-nikkashi-7f354.firebasestorage.app/o%2FEAR08.jpg?alt=media", emoji:"💎" },
-    { sku:"EAR09", name:"Layered Sunflower Clip-On Earrings", category:"Earring", price:399, stock:1, image:"https://firebasestorage.googleapis.com/v0/b/pop-by-nikkashi-7f354.firebasestorage.app/o%2FEAR09.jpg?alt=media", emoji:"💎" },
-    { sku:"EAR10", name:"Sunflower Sequin Brooch Pair", category:"Earring", price:399, stock:1, image:"https://firebasestorage.googleapis.com/v0/b/pop-by-nikkashi-7f354.firebasestorage.app/o%2FEAR10.jpg?alt=media", emoji:"💎" },
-    { sku:"EAR11", name:"Rainbow Daisy Clip-On Earrings", category:"Earring", price:399, stock:1, image:"https://firebasestorage.googleapis.com/v0/b/pop-by-nikkashi-7f354.firebasestorage.app/o%2FEAR11.jpg?alt=media", emoji:"💎" },
-    { sku:"EAR12", name:"Red Sequin Sunflower Clip-On Earrings", category:"Earring", price:399, stock:2, image:"https://firebasestorage.googleapis.com/v0/b/pop-by-nikkashi-7f354.firebasestorage.app/o%2FEAR12.jpg?alt=media", emoji:"💎" },
-    { sku:"EAR13", name:"Purple Sunflower Clip-On Earrings", category:"Earring", price:399, stock:4, image:"https://firebasestorage.googleapis.com/v0/b/pop-by-nikkashi-7f354.firebasestorage.app/o%2FEAR13.jpg?alt=media", emoji:"💎" },
-    { sku:"EAR14", name:"Iridescent Sunflower Clip-On Earrings", category:"Earring", price:399, stock:4, image:"https://firebasestorage.googleapis.com/v0/b/pop-by-nikkashi-7f354.firebasestorage.app/o%2FEAR14.jpg?alt=media", emoji:"💎" },
-    { sku:"EAR15", name:"Bride Beaded Crystal Clip-On Earrings", category:"Earring", price:549, stock:4, image:"https://firebasestorage.googleapis.com/v0/b/pop-by-nikkashi-7f354.firebasestorage.app/o%2FEAR15.jpg?alt=media", emoji:"💎" },
-    { sku:"EAR16", name:"Bride Pink Beaded Clip-On Earrings", category:"Earring", price:549, stock:1, image:"https://firebasestorage.googleapis.com/v0/b/pop-by-nikkashi-7f354.firebasestorage.app/o%2FEAR16.jpg?alt=media", emoji:"💎" },
-    { sku:"EAR17", name:"Hot Pink Beaded Heart Drop Earrings", category:"Earring", price:549, stock:1, image:"https://firebasestorage.googleapis.com/v0/b/pop-by-nikkashi-7f354.firebasestorage.app/o%2FEAR17.jpg?alt=media", emoji:"💎" },
-    { sku:"EAR18", name:"Heart-Shaped Beaded Drop Earring", category:"Earring", price:549, stock:1, image:"https://firebasestorage.googleapis.com/v0/b/pop-by-nikkashi-7f354.firebasestorage.app/o%2FEAR18.jpg?alt=media", emoji:"💎" },
-    { sku:"EAR19", name:"Heart-Shaped Beaded Drop Earring", category:"Earring", price:549, stock:1, image:"https://firebasestorage.googleapis.com/v0/b/pop-by-nikkashi-7f354.firebasestorage.app/o%2FEAR19.jpg?alt=media", emoji:"💎" },
-    { sku:"EAR20", name:"Beaded Heart Drop Earrings with Pearl Cluster", category:"Earring", price:549, stock:1, image:"https://firebasestorage.googleapis.com/v0/b/pop-by-nikkashi-7f354.firebasestorage.app/o%2FEAR20.jpg?alt=media", emoji:"💎" },
-    { sku:"EAR21", name:"Floral Beaded Heart Earrings", category:"Earring", price:449, stock:1, image:"https://firebasestorage.googleapis.com/v0/b/pop-by-nikkashi-7f354.firebasestorage.app/o%2FEAR21.jpg?alt=media", emoji:"💎" },
-    { sku:"EAR22", name:"Star Motif Beaded Statement Earring", category:"Earring", price:549, stock:1, image:"https://firebasestorage.googleapis.com/v0/b/pop-by-nikkashi-7f354.firebasestorage.app/o%2FEAR22.jpg?alt=media", emoji:"💎" },
-    { sku:"EAR23", name:"Ombre Heart Seed Bead Drop Earrings", category:"Earring", price:449, stock:4, image:"https://firebasestorage.googleapis.com/v0/b/pop-by-nikkashi-7f354.firebasestorage.app/o%2FEAR23.jpg?alt=media", emoji:"💎" },
-    { sku:"EAR24", name:"Hot Pink Beaded Double Heart Drop Earring", category:"Earring", price:499, stock:4, image:"https://firebasestorage.googleapis.com/v0/b/pop-by-nikkashi-7f354.firebasestorage.app/o%2FEAR24.jpg?alt=media", emoji:"💎" },
-    { sku:"EAR25", name:"S-Curve Multicolour Seed Bead Hoop Earrings", category:"Earring", price:400, stock:4, image:"https://firebasestorage.googleapis.com/v0/b/pop-by-nikkashi-7f354.firebasestorage.app/o%2FEAR25.jpg?alt=media", emoji:"💎" },
-    { sku:"EAR26", name:"Floral Beaded Drop Earring with Petal Fan", category:"Earring", price:449, stock:4, image:"https://firebasestorage.googleapis.com/v0/b/pop-by-nikkashi-7f354.firebasestorage.app/o%2FEAR26.jpg?alt=media", emoji:"💎" },
-    { sku:"EAR27", name:"Beaded Script Letter Drop Earrings", category:"Earring", price:399, stock:4, image:"https://firebasestorage.googleapis.com/v0/b/pop-by-nikkashi-7f354.firebasestorage.app/o%2FEAR27.jpg?alt=media", emoji:"💎" },
-    { sku:"EAR28", name:"Hummingbird Beaded Sequin Clip-On Earrings", category:"Earring", price:349, stock:4, image:"https://firebasestorage.googleapis.com/v0/b/pop-by-nikkashi-7f354.firebasestorage.app/o%2FEAR28.jpg?alt=media", emoji:"💎" },
-    { sku:"EAR29", name:"Parrot Beaded Sequin Drop Earrings", category:"Earring", price:349, stock:2, image:"https://firebasestorage.googleapis.com/v0/b/pop-by-nikkashi-7f354.firebasestorage.app/o%2FEAR29.jpg?alt=media", emoji:"💎" },
-    { sku:"EAR30", name:"Orange Beaded Floral Embroidered Drop Earring", category:"Earring", price:499, stock:4, image:"https://firebasestorage.googleapis.com/v0/b/pop-by-nikkashi-7f354.firebasestorage.app/o%2FEAR30.jpg?alt=media", emoji:"💎" },
-    { sku:"EAR31", name:"Arch Hoop Seed Bead Dangler Earrings", category:"Earring", price:499, stock:3, image:"https://firebasestorage.googleapis.com/v0/b/pop-by-nikkashi-7f354.firebasestorage.app/o%2FEAR31.jpg?alt=media", emoji:"💎" },
-    { sku:"EAR32", name:"Black Beaded Tassel Fringe Earring", category:"Earring", price:549, stock:4, image:"https://firebasestorage.googleapis.com/v0/b/pop-by-nikkashi-7f354.firebasestorage.app/o%2FEAR32.jpg?alt=media", emoji:"💎" },
-    { sku:"EAR33", name:"Orange & Gold Beaded Tassel Drop Earrings", category:"Earring", price:549, stock:4, image:"https://firebasestorage.googleapis.com/v0/b/pop-by-nikkashi-7f354.firebasestorage.app/o%2FEAR33.jpg?alt=media", emoji:"💎" },
-    { sku:"EAR34", name:"Hot Pink Beaded Tassel Drop Earrings", category:"Earring", price:549, stock:3, image:"https://firebasestorage.googleapis.com/v0/b/pop-by-nikkashi-7f354.firebasestorage.app/o%2FEAR34.jpg?alt=media", emoji:"💎" },
-    { sku:"EAR35", name:"White & Gold Beaded Fan Tassel Earrings with Sequins", category:"Earring", price:499, stock:4, image:"https://firebasestorage.googleapis.com/v0/b/pop-by-nikkashi-7f354.firebasestorage.app/o%2FEAR35.jpg?alt=media", emoji:"💎" },
-    { sku:"EAR36", name:"Beaded Fringe Tassel Drop Earrings", category:"Earring", price:499, stock:4, image:"https://firebasestorage.googleapis.com/v0/b/pop-by-nikkashi-7f354.firebasestorage.app/o%2FEAR36.jpg?alt=media", emoji:"💎" },
-    { sku:"EAR37", name:"Black and Gold Beaded Fringe Tassel Earring", category:"Earring", price:549, stock:4, image:"https://firebasestorage.googleapis.com/v0/b/pop-by-nikkashi-7f354.firebasestorage.app/o%2FEAR37.jpg?alt=media", emoji:"💎" },
-    { sku:"EAR38", name:"Pearl & Crystal Fringe Tassel Earrings", category:"Earring", price:749, stock:3, image:"https://firebasestorage.googleapis.com/v0/b/pop-by-nikkashi-7f354.firebasestorage.app/o%2FEAR38.jpg?alt=media", emoji:"💎" },
-    { sku:"EAR39", name:"Turquoise & Gold Beaded Tassel Chandelier Earring", category:"Earring", price:499, stock:4, image:"https://firebasestorage.googleapis.com/v0/b/pop-by-nikkashi-7f354.firebasestorage.app/o%2FEAR39.jpg?alt=media", emoji:"💎" },
-    { sku:"EAR40", name:"Multicolour Rhinestone Tassel Appliqué Brooch Pair", category:"Earring", price:749, stock:4, image:"https://firebasestorage.googleapis.com/v0/b/pop-by-nikkashi-7f354.firebasestorage.app/o%2FEAR40.jpg?alt=media", emoji:"💎" },
-    { sku:"EAR41", name:"Hot Pink Petal Fan Clip-On Earrings", category:"Earring", price:449, stock:4, image:"https://firebasestorage.googleapis.com/v0/b/pop-by-nikkashi-7f354.firebasestorage.app/o%2FEAR41.jpg?alt=media", emoji:"💎" },
-    { sku:"EAR42", name:"Blue Wing Statement Beaded Earring", category:"Earring", price:449, stock:4, image:"https://firebasestorage.googleapis.com/v0/b/pop-by-nikkashi-7f354.firebasestorage.app/o%2FEAR42.jpg?alt=media", emoji:"💎" },
-    { sku:"EAR43", name:"Beaded Floral Butterfly Brooch Set", category:"Earring", price:449, stock:4, image:"https://firebasestorage.googleapis.com/v0/b/pop-by-nikkashi-7f354.firebasestorage.app/o%2FEAR43.jpg?alt=media", emoji:"💎" },
-    { sku:"EAR44", name:"White Beaded Fan Drop Earrings", category:"Earring", price:399, stock:2, image:"https://firebasestorage.googleapis.com/v0/b/pop-by-nikkashi-7f354.firebasestorage.app/o%2FEAR44.jpg?alt=media", emoji:"💎" },
-    { sku:"EAR45", name:"Floral Beaded Garden Drop Earrings", category:"Earring", price:599, stock:1, image:"https://firebasestorage.googleapis.com/v0/b/pop-by-nikkashi-7f354.firebasestorage.app/o%2FEAR45.jpg?alt=media", emoji:"💎" },
-    { sku:"EAR46", name:"Beaded Floral Garden Drop Earrings", category:"Earring", price:599, stock:2, image:"https://firebasestorage.googleapis.com/v0/b/pop-by-nikkashi-7f354.firebasestorage.app/o%2FEAR46.jpg?alt=media", emoji:"💎" },
-    { sku:"EAR47", name:"Evil Eye Beaded Cross Bar Drop Earring", category:"Earring", price:749, stock:2, image:"https://firebasestorage.googleapis.com/v0/b/pop-by-nikkashi-7f354.firebasestorage.app/o%2FEAR47.jpg?alt=media", emoji:"💎" },
-    { sku:"EAR48", name:"Evil Eye Beaded Drop Earring with Crystal Half-Moon Charms", category:"Earring", price:749, stock:2, image:"https://firebasestorage.googleapis.com/v0/b/pop-by-nikkashi-7f354.firebasestorage.app/o%2FEAR48.jpg?alt=media", emoji:"💎" },
-    { sku:"EAR49", name:"Evil Eye Beaded Rhinestone Fringe Earring", category:"Earring", price:499, stock:2, image:"https://firebasestorage.googleapis.com/v0/b/pop-by-nikkashi-7f354.firebasestorage.app/o%2FEAR49.jpg?alt=media", emoji:"💎" },
-    { sku:"EAR50", name:"Evil Eye Beaded Drop Earring", category:"Earring", price:400, stock:2, image:"https://firebasestorage.googleapis.com/v0/b/pop-by-nikkashi-7f354.firebasestorage.app/o%2FEAR50.jpg?alt=media", emoji:"💎" },
-    { sku:"EAR51", name:"Beetle Bug Sequin Beaded Brooch Pair", category:"Earring", price:449, stock:2, image:"https://firebasestorage.googleapis.com/v0/b/pop-by-nikkashi-7f354.firebasestorage.app/o%2FEAR51.jpg?alt=media", emoji:"💎" },
-    { sku:"EAR52", name:"Daisy Beaded Square Drop Earring", category:"Earring", price:499, stock:1, image:"https://firebasestorage.googleapis.com/v0/b/pop-by-nikkashi-7f354.firebasestorage.app/o%2FEAR52.jpg?alt=media", emoji:"💎" },
-    { sku:"EAR53", name:"Daisy Beaded Square Drop Earring", category:"Earring", price:499, stock:2, image:"https://firebasestorage.googleapis.com/v0/b/pop-by-nikkashi-7f354.firebasestorage.app/o%2FEAR53.jpg?alt=media", emoji:"💎" },
-    { sku:"BRAC01", name:"Multicolour Seed Bead Twisted Wrap Bracelet", category:"Bracelet", price:599, stock:1, image:"https://firebasestorage.googleapis.com/v0/b/pop-by-nikkashi-7f354.firebasestorage.app/o%2FBRAC01.jpg?alt=media", emoji:"✨" },
-    { sku:"BRAC02", name:"Multicolour Seed Bead Knotted Wrap Bracelet", category:"Bracelet", price:599, stock:0, image:"https://firebasestorage.googleapis.com/v0/b/pop-by-nikkashi-7f354.firebasestorage.app/o%2FBRAC02.jpg?alt=media", emoji:"✨" },
-    { sku:"BRAC03", name:"Multicolour Seed Bead Layered Wrap Bracelet", category:"Bracelet", price:599, stock:1, image:"https://firebasestorage.googleapis.com/v0/b/pop-by-nikkashi-7f354.firebasestorage.app/o%2FBRAC03.jpg?alt=media", emoji:"✨" },
-    { sku:"BRAC04", name:"Teal & White Seed Bead Braided Cuff Bracelet", category:"Bracelet", price:599, stock:1, image:"https://firebasestorage.googleapis.com/v0/b/pop-by-nikkashi-7f354.firebasestorage.app/o%2FBRAC04.jpg?alt=media", emoji:"✨" },
-    { sku:"BRAC05", name:"Purple & Gold Loom Beaded Cuff Bracelet", category:"Bracelet", price:599, stock:1, image:"https://firebasestorage.googleapis.com/v0/b/pop-by-nikkashi-7f354.firebasestorage.app/o%2FBRAC05.jpg?alt=media", emoji:"✨" },
-    { sku:"BRAC06", name:"Royal Blue Loom Beaded Cuff Bracelet", category:"Bracelet", price:499, stock:1, image:"https://firebasestorage.googleapis.com/v0/b/pop-by-nikkashi-7f354.firebasestorage.app/o%2FBRAC06.jpg?alt=media", emoji:"✨" },
-    { sku:"BRAC07", name:"Black & Gold Beaded Tassel Bracelet Stack Set", category:"Bracelet", price:599, stock:1, image:"https://firebasestorage.googleapis.com/v0/b/pop-by-nikkashi-7f354.firebasestorage.app/o%2FBRAC07.jpg?alt=media", emoji:"✨" },
-    { sku:"BRAC08", name:"Neutral & Coral Beaded Charm Bracelet Stack Set", category:"Bracelet", price:599, stock:1, image:"https://firebasestorage.googleapis.com/v0/b/pop-by-nikkashi-7f354.firebasestorage.app/o%2FBRAC08.jpg?alt=media", emoji:"✨" },
-    { sku:"BRAC09", name:"Multicolour Polymer Clay & Seed Bead Bracelet Stack Set", category:"Bracelet", price:599, stock:1, image:"https://firebasestorage.googleapis.com/v0/b/pop-by-nikkashi-7f354.firebasestorage.app/o%2FBRAC09.jpg?alt=media", emoji:"✨" },
-    { sku:"BRAC10", name:"Black, Pink & Gold Diamond Pattern Loom Bracelet", category:"Bracelet", price:499, stock:1, image:"https://firebasestorage.googleapis.com/v0/b/pop-by-nikkashi-7f354.firebasestorage.app/o%2FBRAC10.jpg?alt=media", emoji:"✨" },
-    { sku:"BRAC11", name:"White, Blush Pink & Teal Loom Beaded Cuff Bracelet", category:"Bracelet", price:349, stock:1, image:"https://firebasestorage.googleapis.com/v0/b/pop-by-nikkashi-7f354.firebasestorage.app/o%2FBRAC11.jpg?alt=media", emoji:"✨" },
-    { sku:"BRAC12", name:"Orange, White & Black Fox Pattern Loom Cuff Bracelet", category:"Bracelet", price:399, stock:1, image:"https://firebasestorage.googleapis.com/v0/b/pop-by-nikkashi-7f354.firebasestorage.app/o%2FBRAC12.jpg?alt=media", emoji:"✨" },
-    { sku:"BRAC13", name:"Blush Pink & Gold Star Pattern Loom Cuff Bracelet", category:"Bracelet", price:499, stock:1, image:"https://firebasestorage.googleapis.com/v0/b/pop-by-nikkashi-7f354.firebasestorage.app/o%2FBRAC13.jpg?alt=media", emoji:"✨" },
-    { sku:"BRAC14", name:"Orange & Gold Beaded Bracelet Stack Set", category:"Bracelet", price:599, stock:1, image:"https://firebasestorage.googleapis.com/v0/b/pop-by-nikkashi-7f354.firebasestorage.app/o%2FBRAC14.jpg?alt=media", emoji:"✨" },
-    { sku:"BRAC15", name:"Black, Pink & Gold Plaid Loom Beaded Cuff Bracelet", category:"Bracelet", price:399, stock:0, image:"https://firebasestorage.googleapis.com/v0/b/pop-by-nikkashi-7f354.firebasestorage.app/o%2FBRAC15.jpg?alt=media", emoji:"✨" },
-    { sku:"BRAC16", name:"Yellow & Orange Seed Bead Bracelet Mix Set", category:"Bracelet", price:599, stock:1, image:"https://firebasestorage.googleapis.com/v0/b/pop-by-nikkashi-7f354.firebasestorage.app/o%2FBRAC16.jpg?alt=media", emoji:"✨" },
+    // ── EARRINGS COLLECTION 01 ──────────────────────────────────
+    { sku:"EAR-001-01", name:"Floral Stud Earrings",              category:"Earrings",    price:999, stock:10, image:"https://ear-001-01.jpg", emoji:"🌸" },
+    { sku:"EAR-002-01", name:"Mismatched Bead Earrings",          category:"Earrings",    price:999, stock:10, image:"https://ear-002-01.jpg", emoji:"💎" },
+    { sku:"EAR-003-01", name:"Blue Floral Stud Earrings",         category:"Earrings",    price:999, stock:10, image:"https://ear-003-01.jpg", emoji:"💙" },
+    { sku:"EAR-004-01", name:"Floral Stud Earrings",              category:"Earrings",    price:999, stock:10, image:"https://ear-004-01.jpg", emoji:"🌸" },
+    { sku:"EAR-005-01", name:"Hot Pink Heart Earrings",           category:"Earrings",    price:999, stock:10, image:"https://ear-005-01.jpg", emoji:"💗" },
+    { sku:"EAR-006-01", name:"Heart Drop Earrings",               category:"Earrings",    price:999, stock:10, image:"https://ear-006-01.jpg", emoji:"❤️" },
+    { sku:"EAR-007-01", name:"Arch Hoop Dangler Earrings",        category:"Earrings",    price:999, stock:10, image:"https://ear-007-01.jpg", emoji:"✨" },
+    { sku:"EAR-008-01", name:"Lemon Slice Stud Earrings",         category:"Earrings",    price:999, stock:10, image:"https://ear-008-01.jpg", emoji:"🍋" },
+    { sku:"EAR-009-01", name:"Heart Drop Earrings",               category:"Earrings",    price:999, stock:10, image:"https://ear-009-01.jpg", emoji:"❤️" },
+    { sku:"EAR-010-01", name:"Red Heart Drop Earrings",           category:"Earrings",    price:999, stock:10, image:"https://ear-010-01.jpg", emoji:"❤️" },
+    { sku:"EAR-011-01", name:"Red Heart Drop Earrings",           category:"Earrings",    price:999, stock:10, image:"https://ear-011-01.jpg", emoji:"❤️" },
+    { sku:"EAR-012-01", name:"Yellow Bird Drop Earrings",         category:"Earrings",    price:999, stock:10, image:"https://ear-012-01.jpg", emoji:"🐦" },
+    { sku:"EAR-013-01", name:"Shell Flower Clip Earrings",        category:"Earrings",    price:999, stock:10, image:"https://ear-013-01.jpg", emoji:"🌺" },
+    { sku:"EAR-014-01", name:"Sunflower Half-Bloom Earrings",     category:"Earrings",    price:999, stock:10, image:"https://ear-014-01.jpg", emoji:"🌻" },
+    { sku:"EAR-015-01", name:"Orange Floral Drop Earrings",       category:"Earrings",    price:999, stock:10, image:"https://ear-015-01.jpg", emoji:"🌼" },
+    // ── EARRINGS COLLECTION 02 ──────────────────────────────────
+    { sku:"EAR-001-02", name:"Rainbow Arch Drop Earrings",        category:"Earrings",    price:999, stock:10, image:"https://ear-001-02.jpg", emoji:"🌈" },
+    { sku:"EAR-002-02", name:"Floral Petal Fan Earrings",         category:"Earrings",    price:999, stock:10, image:"https://ear-002-02.jpg", emoji:"🌸" },
+    { sku:"EAR-003-02", name:"Heart Floral Stud Earrings",        category:"Earrings",    price:999, stock:10, image:"https://ear-003-02.jpg", emoji:"💗" },
+    { sku:"EAR-004-02", name:"Star Motif Statement Earrings",     category:"Earrings",    price:999, stock:10, image:"https://ear-004-02.jpg", emoji:"⭐" },
+    { sku:"EAR-005-02", name:"Black Tassel Fringe Earrings",      category:"Earrings",    price:999, stock:10, image:"https://ear-005-02.jpg", emoji:"🖤" },
+    { sku:"EAR-006-02", name:"Hot Pink Tassel Earrings",          category:"Earrings",    price:999, stock:10, image:"https://ear-006-02.jpg", emoji:"💗" },
+    { sku:"EAR-007-02", name:"Pearl Crystal Tassel Earrings",     category:"Earrings",    price:999, stock:10, image:"https://ear-007-02.jpg", emoji:"🤍" },
+    { sku:"EAR-008-02", name:"Tri-Colour Fringe Tassel Earrings", category:"Earrings",    price:999, stock:10, image:"https://ear-008-02.jpg", emoji:"🎨" },
+    { sku:"EAR-009-02", name:"Floral Heart Clip Earrings",        category:"Earrings",    price:999, stock:10, image:"https://ear-009-02.jpg", emoji:"💗" },
+    { sku:"EAR-010-02", name:"White Fan Bridal Earrings",         category:"Earrings",    price:999, stock:10, image:"https://ear-010-02.jpg", emoji:"🤍" },
+    { sku:"EAR-011-02", name:"Floral Appliqué Drop Earrings",     category:"Earrings",    price:999, stock:10, image:"https://ear-011-02.jpg", emoji:"🌸" },
+    { sku:"EAR-012-02", name:"Evil Eye Cross Bar Earrings",       category:"Earrings",    price:999, stock:10, image:"https://ear-012-02.jpg", emoji:"🧿" },
+    { sku:"EAR-013-02", name:"Black Gold Fringe Tassel Earrings", category:"Earrings",    price:999, stock:10, image:"https://ear-013-02.jpg", emoji:"🖤" },
+    { sku:"EAR-014-02", name:"Evil Eye Half-Moon Earrings",       category:"Earrings",    price:999, stock:10, image:"https://ear-014-02.jpg", emoji:"🧿" },
+    { sku:"EAR-015-02", name:"Evil Eye Rhinestone Fringe Earrings",category:"Earrings",   price:999, stock:10, image:"https://ear-015-02.jpg", emoji:"🧿" },
+    // ── EARRINGS (standalone) ────────────────────────────────────
+    { sku:"EAR-016",    name:"Ombre Heart Drop Earrings",         category:"Earrings",    price:999, stock:10, image:"https://ear-016.jpg",    emoji:"💗" },
+    { sku:"EAR-017",    name:"Blue Wing Statement Earrings",      category:"Earrings",    price:999, stock:10, image:"https://ear-017.jpg",    emoji:"💙" },
+    { sku:"EAR-018",    name:"S-Curve Hoop Earrings",             category:"Earrings",    price:999, stock:10, image:"https://ear-018.jpg",    emoji:"✨" },
+    { sku:"EAR-019",    name:"Evil Eye Drop Earrings",            category:"Earrings",    price:999, stock:10, image:"https://ear-019.jpg",    emoji:"🧿" },
+    { sku:"EAR-020",    name:"Double Heart Drop Earrings",        category:"Earrings",    price:999, stock:10, image:"https://ear-020.jpg",    emoji:"💗" },
+    { sku:"EAR-021",    name:"Floral Garden Drop Earrings",       category:"Earrings",    price:999, stock:10, image:"https://ear-021.jpg",    emoji:"🌸" },
+    { sku:"EAR-022",    name:"Turquoise Gold Tassel Earrings",    category:"Earrings",    price:999, stock:10, image:"https://ear-022.jpg",    emoji:"💎" },
+    { sku:"EAR-023",    name:"Daisy Square Drop Earrings",        category:"Earrings",    price:999, stock:10, image:"https://ear-023.jpg",    emoji:"🌼" },
+    { sku:"EAR-024",    name:"Daisy Square Drop Earrings",        category:"Earrings",    price:999, stock:10, image:"https://ear-024.jpg",    emoji:"🌼" },
+    { sku:"EAR-025",    name:"White Gold Fan Tassel Earrings",    category:"Earrings",    price:999, stock:10, image:"https://ear-025.jpg",    emoji:"🤍" },
+    { sku:"EAR-026",    name:"Orange Gold Tassel Earrings",       category:"Earrings",    price:999, stock:10, image:"https://ear-026.jpg",    emoji:"🧡" },
+    // ── BROOCHES COLLECTION 01 ───────────────────────────────────
+    { sku:"BRO-001-01", name:"Floral Spiral Brooch",              category:"Brooches",    price:999, stock:10, image:"https://bro-001-01.jpg", emoji:"🌸" },
+    { sku:"BRO-002-01", name:"Floral Rose Brooch",                category:"Brooches",    price:999, stock:10, image:"https://bro-002-01.jpg", emoji:"🌹" },
+    { sku:"BRO-003-01", name:"Evil Eye Beaded Brooch",            category:"Brooches",    price:999, stock:10, image:"https://bro-003-01.jpg", emoji:"🧿" },
+    // ── BROOCHES (standalone) ────────────────────────────────────
+    { sku:"BRO-004",    name:"LOVE Star Brooch",                  category:"Brooches",    price:999, stock:10, image:"https://bro-004.jpg",    emoji:"⭐" },
+    { sku:"BRO-005",    name:"Butterfly Brooch",                  category:"Brooches",    price:999, stock:10, image:"https://bro-005.jpg",    emoji:"🦋" },
+    { sku:"BRO-006",    name:"Camera Brooch",                     category:"Brooches",    price:999, stock:10, image:"https://bro-006.jpg",    emoji:"📷" },
+    { sku:"BRO-007",    name:"Soccer Ball Brooch",                category:"Brooches",    price:999, stock:10, image:"https://bro-007.jpg",    emoji:"⚽" },
+    { sku:"BRO-008",    name:"Soccer Ball Brooch",                category:"Brooches",    price:999, stock:10, image:"https://bro-008.jpg",    emoji:"⚽" },
+    { sku:"BRO-009",    name:"Evil Eye Crystal Brooch",           category:"Brooches",    price:999, stock:10, image:"https://bro-009.jpg",    emoji:"🧿" },
+    { sku:"BRO-010",    name:"OMG! Speech Bubble Brooch",         category:"Brooches",    price:999, stock:10, image:"https://bro-010.jpg",    emoji:"💬" },
+    { sku:"BRO-011",    name:"Sunflower Fan Brooch",              category:"Brooches",    price:999, stock:10, image:"https://bro-011.jpg",    emoji:"🌻" },
+    { sku:"BRO-012",    name:"Sunflower Sequin Brooch",           category:"Brooches",    price:999, stock:10, image:"https://bro-012.jpg",    emoji:"🌻" },
+    // ── BROOCHES COLLECTION 02 ───────────────────────────────────
+    { sku:"BRO-001-02", name:"Floral Butterfly Brooch",           category:"Brooches",    price:999, stock:10, image:"https://bro-001-02.jpg", emoji:"🦋" },
+    { sku:"BRO-002-02", name:"Beetle Sequin Brooch",              category:"Brooches",    price:999, stock:10, image:"https://bro-002-02.jpg", emoji:"🐞" },
+    { sku:"BRO-003-02", name:"Rhinestone Tassel Brooch",          category:"Brooches",    price:999, stock:10, image:"https://bro-003-02.jpg", emoji:"✨" },
+    // ── ACCESSORIES / HAIR CLIPS COLLECTION 01 ───────────────────
+    { sku:"OTH-001-01", name:"Cool Sequin Patch",                 category:"Accessories", price:999, stock:10, image:"https://oth-001-01.jpg", emoji:"✨" },
+    { sku:"OTH-002-01", name:"Daisy Flower Clip",                 category:"Accessories", price:999, stock:10, image:"https://oth-002-01.jpg", emoji:"🌼" },
+    { sku:"OTH-003",    name:"Bride Crystal Hair Clip",           category:"Accessories", price:999, stock:10, image:"https://oth-003.jpg",    emoji:"💍" },
+    { sku:"OTH-004",    name:"Bride Beaded Hair Clip",            category:"Accessories", price:999, stock:10, image:"https://oth-004.jpg",    emoji:"💍" },
+    { sku:"OTH-005",    name:"Script Letter Hair Pin",            category:"Accessories", price:999, stock:10, image:"https://oth-005.jpg",    emoji:"✍️" },
+    { sku:"OTH-006",    name:"Sunflower Hair Clip",               category:"Accessories", price:999, stock:10, image:"https://oth-006.jpg",    emoji:"🌻" },
+    { sku:"OTH-007",    name:"Hummingbird Hair Clip",             category:"Accessories", price:999, stock:10, image:"https://oth-007.jpg",    emoji:"🐦" },
+    { sku:"OTH-008",    name:"Rainbow Daisy Hair Clip",           category:"Accessories", price:999, stock:10, image:"https://oth-008.jpg",    emoji:"🌈" },
+    { sku:"OTH-009",    name:"Red Sunflower Clip",                category:"Accessories", price:999, stock:10, image:"https://oth-009.jpg",    emoji:"🌻" },
+    { sku:"OTH-010",    name:"Purple Sunflower Clip",             category:"Accessories", price:999, stock:10, image:"https://oth-010.jpg",    emoji:"💜" },
+    { sku:"OTH-011",    name:"Floral Appliqué Patch",             category:"Accessories", price:999, stock:10, image:"https://oth-011.jpg",    emoji:"🌸" },
+    // ── ACCESSORIES COLLECTION 02 ────────────────────────────────
+    { sku:"OTH-001-02", name:"Iridescent Sunflower Clip",         category:"Accessories", price:999, stock:10, image:"https://oth-001-02.jpg", emoji:"🌻" },
+    { sku:"OTH-002-02", name:"Petal Fan Hair Clip",               category:"Accessories", price:999, stock:10, image:"https://oth-002-02.jpg", emoji:"🌸" },
   ];
 
   const batch = db.batch();
@@ -489,27 +509,6 @@ app.post("/seed-products", async (req, res) => {
 
   log("SEED", `${products.length} real Nikkashi products seeded to Firebase`);
   res.json({ message: "Products seeded", count: products.length });
-});
-
-
-// ─────────────────────────────────────────────────────────────────
-// GET PRODUCTS FOR FRONTEND
-// ─────────────────────────────────────────────────────────────────
-app.get("/products", async (req, res) => {
-  try {
-    if (!db) {
-      return res.status(500).json({ error: "Firebase not connected" });
-    }
-    const snapshot = await db.collection("products").get();
-    const products = snapshot.docs.map(doc => ({
-      id: doc.id,
-      ...doc.data(),
-    }));
-    res.json(products);
-  } catch (error) {
-    console.error("Error fetching products:", error);
-    res.status(500).json({ error: "Failed to fetch products" });
-  }
 });
 
 
@@ -586,7 +585,7 @@ cron.schedule("*/30 * * * *", async () => {
 // ─────────────────────────────────────────────────────────────────
 // START SERVER
 // ─────────────────────────────────────────────────────────────────
-const PORT = process.env.PORT || 8080;
+const PORT = process.env.PORT || 5000;
 app.listen(PORT, () => {
   console.log(`\n🚀 POP by Nikkashi Backend running on port ${PORT}`);
   console.log(`   Health: http://localhost:${PORT}/health`);
