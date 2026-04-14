@@ -177,24 +177,22 @@ app.post("/create-order", async (req, res) => {
       createdAt: new Date().toISOString(),
     };
 
-    // Reduce stock before saving
+    // 🔥 TRANSACTION SAFE stock reduction (prevents oversell)
     if (db) {
       for (const item of items) {
         if (item.sku) {
           const ref = db.collection("products").doc(item.sku);
-          const doc = await ref.get();
-
-          if (!doc.exists) continue;
-
-          const currentStock = doc.data().stock || 0;
-
-          if (currentStock <= 0) {
-            return res.status(400).json({
-              error: `${item.name} is out of stock`,
+          try {
+            await db.runTransaction(async (t) => {
+              const doc = await t.get(ref);
+              if (!doc.exists) return;
+              const stock = doc.data().stock || 0;
+              if (stock <= 0) throw new Error(`${item.name} is out of stock`);
+              t.update(ref, { stock: stock - 1 });
             });
+          } catch (stockErr) {
+            return res.status(400).json({ error: stockErr.message });
           }
-
-          await ref.update({ stock: currentStock - 1 });
         }
       }
     }
@@ -264,16 +262,17 @@ app.post("/verify", async (req, res) => {
     if (db) {
       await db.collection("orders").doc(razorpay_order_id).update(update);
 
-      // Reduce stock for each item
+      // 🔥 TRANSACTION SAFE stock reduction (prevents oversell)
       for (const item of (items || [])) {
         if (item.sku) {
           const ref = db.collection("products").doc(item.sku);
-          const doc = await ref.get();
-          if (doc.exists) {
-            await ref.update({
-              stock: admin.firestore.FieldValue.increment(-1),
-            });
-          }
+          await db.runTransaction(async (t) => {
+            const doc = await t.get(ref);
+            if (!doc.exists) return;
+            const stock = doc.data().stock || 0;
+            if (stock <= 0) throw new Error(`Out of stock: ${item.name}`);
+            t.update(ref, { stock: stock - 1 });
+          });
         }
       }
 
