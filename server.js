@@ -150,24 +150,20 @@ app.post("/create-order", async (req, res) => {
   }
 
   try {
-    const receipt   = "POP" + Date.now();
-    const rzpOrder  = await razorpay.orders.create({
-      amount:   Math.round(amount * 100),
-      currency: "INR",
-      receipt,
-    });
+    // 🔥 INSTANT CHECKOUT: no Razorpay, local order ID
+    const orderId = "POP" + Date.now();
 
     const orderDoc = {
-      orderId:   rzpOrder.id,
-      receipt,
+      orderId,
+      receipt: orderId,
       amount,
       items,
       customer:  customer || {},
-      status:    "paid", // 🔥 instant checkout: marked paid immediately
+      status:    "paid",
       createdAt: new Date().toISOString(),
     };
 
-    // 🔥 INSTANT CHECKOUT: Reduce stock before saving order
+    // Reduce stock before saving
     if (db) {
       for (const item of items) {
         if (item.sku) {
@@ -178,29 +174,26 @@ app.post("/create-order", async (req, res) => {
 
           const currentStock = doc.data().stock || 0;
 
-          // Prevent negative stock
           if (currentStock <= 0) {
             return res.status(400).json({
               error: `${item.name} is out of stock`,
             });
           }
 
-          await ref.update({
-            stock: currentStock - 1,
-          });
+          await ref.update({ stock: currentStock - 1 });
         }
       }
     }
 
     // Save to Firebase or memory
     if (db) {
-      await db.collection("orders").doc(rzpOrder.id).set(orderDoc);
+      await db.collection("orders").doc(orderId).set(orderDoc);
     } else {
       _ordersMemory.push(orderDoc);
     }
 
-    log("ORDER", "Created →", rzpOrder.id);
-    res.json({ orderId: rzpOrder.id, amount: rzpOrder.amount, currency: "INR" });
+    log("ORDER", "Created →", orderId);
+    res.json({ orderId, amount, currency: "INR" });
 
   } catch (e) {
     log("ORDER", "Error:", e.message);
