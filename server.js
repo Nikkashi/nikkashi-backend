@@ -145,9 +145,23 @@ function buildCustomerWhatsAppMsg(order) {
 app.post("/create-order", async (req, res) => {
   const { amount, items, customer } = req.body;
 
-  if (!amount || !items || !Array.isArray(items) || items.length === 0) {
-    return res.status(400).json({ error: "amount and items[] are required" });
+  // ── VALIDATION ──────────────────────────────────────────────
+  if (!customer || !customer.name || !customer.phone) {
+    return res.status(400).json({ error: "Customer name and phone are required" });
   }
+
+  if (!/^[6-9]\d{9}$/.test(customer.phone)) {
+    return res.status(400).json({ error: "Invalid phone number" });
+  }
+
+  if (!items || !Array.isArray(items) || items.length === 0) {
+    return res.status(400).json({ error: "Items are required" });
+  }
+
+  if (!amount || amount <= 0) {
+    return res.status(400).json({ error: "Invalid amount" });
+  }
+  // ── END VALIDATION ───────────────────────────────────────────
 
   try {
     // 🔥 INSTANT CHECKOUT: no Razorpay, local order ID
@@ -163,25 +177,25 @@ app.post("/create-order", async (req, res) => {
       createdAt: new Date().toISOString(),
     };
 
-    // Reduce stock before saving — atomic transaction (race-condition safe)
+    // Reduce stock before saving
     if (db) {
       for (const item of items) {
-        if (!item.sku) continue;
-        const ref = db.collection("products").doc(item.sku);
+        if (item.sku) {
+          const ref = db.collection("products").doc(item.sku);
+          const doc = await ref.get();
 
-        await db.runTransaction(async (t) => {
-          const doc = await t.get(ref);
-
-          if (!doc.exists) throw new Error(`Product not found: ${item.sku}`);
+          if (!doc.exists) continue;
 
           const currentStock = doc.data().stock || 0;
 
           if (currentStock <= 0) {
-            throw new Error(`${item.name || item.sku} is out of stock`);
+            return res.status(400).json({
+              error: `${item.name} is out of stock`,
+            });
           }
 
-          t.update(ref, { stock: currentStock - 1 });
-        });
+          await ref.update({ stock: currentStock - 1 });
+        }
       }
     }
 
@@ -250,18 +264,17 @@ app.post("/verify", async (req, res) => {
     if (db) {
       await db.collection("orders").doc(razorpay_order_id).update(update);
 
-      // Reduce stock for each item — atomic transaction (race-condition safe)
+      // Reduce stock for each item
       for (const item of (items || [])) {
-        if (!item.sku) continue;
-        const ref = db.collection("products").doc(item.sku);
-
-        await db.runTransaction(async (t) => {
-          const doc = await t.get(ref);
-          if (!doc.exists) return; // skip unknown SKUs silently
-          const currentStock = doc.data().stock || 0;
-          if (currentStock <= 0) return; // already at 0, skip
-          t.update(ref, { stock: currentStock - 1 });
-        });
+        if (item.sku) {
+          const ref = db.collection("products").doc(item.sku);
+          const doc = await ref.get();
+          if (doc.exists) {
+            await ref.update({
+              stock: admin.firestore.FieldValue.increment(-1),
+            });
+          }
+        }
       }
 
       // Remove any saved cart for this customer
