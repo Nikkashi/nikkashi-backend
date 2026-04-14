@@ -163,25 +163,25 @@ app.post("/create-order", async (req, res) => {
       createdAt: new Date().toISOString(),
     };
 
-    // Reduce stock before saving
+    // Reduce stock before saving — atomic transaction (race-condition safe)
     if (db) {
       for (const item of items) {
-        if (item.sku) {
-          const ref = db.collection("products").doc(item.sku);
-          const doc = await ref.get();
+        if (!item.sku) continue;
+        const ref = db.collection("products").doc(item.sku);
 
-          if (!doc.exists) continue;
+        await db.runTransaction(async (t) => {
+          const doc = await t.get(ref);
+
+          if (!doc.exists) throw new Error(`Product not found: ${item.sku}`);
 
           const currentStock = doc.data().stock || 0;
 
           if (currentStock <= 0) {
-            return res.status(400).json({
-              error: `${item.name} is out of stock`,
-            });
+            throw new Error(`${item.name || item.sku} is out of stock`);
           }
 
-          await ref.update({ stock: currentStock - 1 });
-        }
+          t.update(ref, { stock: currentStock - 1 });
+        });
       }
     }
 
@@ -250,17 +250,18 @@ app.post("/verify", async (req, res) => {
     if (db) {
       await db.collection("orders").doc(razorpay_order_id).update(update);
 
-      // Reduce stock for each item
+      // Reduce stock for each item — atomic transaction (race-condition safe)
       for (const item of (items || [])) {
-        if (item.sku) {
-          const ref = db.collection("products").doc(item.sku);
-          const doc = await ref.get();
-          if (doc.exists) {
-            await ref.update({
-              stock: admin.firestore.FieldValue.increment(-1),
-            });
-          }
-        }
+        if (!item.sku) continue;
+        const ref = db.collection("products").doc(item.sku);
+
+        await db.runTransaction(async (t) => {
+          const doc = await t.get(ref);
+          if (!doc.exists) return; // skip unknown SKUs silently
+          const currentStock = doc.data().stock || 0;
+          if (currentStock <= 0) return; // already at 0, skip
+          t.update(ref, { stock: currentStock - 1 });
+        });
       }
 
       // Remove any saved cart for this customer
