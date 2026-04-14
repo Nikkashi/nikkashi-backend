@@ -164,48 +164,50 @@ app.post("/create-order", async (req, res) => {
   // ── END VALIDATION ───────────────────────────────────────────
 
   try {
-    // 🔥 INSTANT CHECKOUT: no Razorpay, local order ID
-    const orderId = "POP" + Date.now();
-
-    const orderDoc = {
-      orderId,
-      receipt: orderId,
-      amount,
-      items,
-      customer:  customer || {},
-      status:    "paid",
-      createdAt: new Date().toISOString(),
-    };
-
-    // 🔥 TRANSACTION SAFE stock reduction (prevents oversell)
+    // ── STOCK CHECK (before creating Razorpay order) ─────────────
     if (db) {
       for (const item of items) {
         if (item.sku) {
-          const ref = db.collection("products").doc(item.sku);
-          try {
-            await db.runTransaction(async (t) => {
-              const doc = await t.get(ref);
-              if (!doc.exists) return;
-              const stock = doc.data().stock || 0;
-              if (stock <= 0) throw new Error(`${item.name} is out of stock`);
-              t.update(ref, { stock: stock - 1 });
-            });
-          } catch (stockErr) {
-            return res.status(400).json({ error: stockErr.message });
+          const doc = await db.collection("products").doc(item.sku).get();
+          if (doc.exists && (doc.data().stock || 0) <= 0) {
+            return res.status(400).json({ error: `${item.name} is out of stock` });
           }
         }
       }
     }
 
-    // Save to Firebase or memory
+    // ── CREATE RAZORPAY ORDER ────────────────────────────────────
+    const receipt = "POP" + Date.now();
+    const rzpOrder = await razorpay.orders.create({
+      amount:   amount * 100,   // paise
+      currency: "INR",
+      receipt,
+    });
+
+    // ── SAVE PENDING ORDER TO FIREBASE ───────────────────────────
+    const orderDoc = {
+      orderId:   rzpOrder.id,
+      receipt,
+      amount,
+      items,
+      customer:  customer || {},
+      status:    "pending",
+      createdAt: new Date().toISOString(),
+    };
+
     if (db) {
-      await db.collection("orders").doc(orderId).set(orderDoc);
+      await db.collection("orders").doc(rzpOrder.id).set(orderDoc);
     } else {
       _ordersMemory.push(orderDoc);
     }
 
-    log("ORDER", "Created →", orderId);
-    res.json({ orderId, amount, currency: "INR" });
+    log("ORDER", "Created →", rzpOrder.id);
+    res.json({
+      key:      process.env.RAZORPAY_KEY_ID,
+      orderId:  rzpOrder.id,
+      amount:   rzpOrder.amount,
+      currency: "INR",
+    });
 
   } catch (e) {
     log("ORDER", "Error:", e.message);
