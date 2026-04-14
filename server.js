@@ -24,9 +24,9 @@ function initFirebase() {
   try {
     let serviceAccount;
 
-    if (process.env.FIREBASE_SERVICE_ACCOUNT) {
+    if (process.env.FIREBASE_SERVICE_ACCOUNT || process.env.FIREBASE_KEY) {
       // Railway / production: read from environment variable
-      serviceAccount = JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT);
+      serviceAccount = JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT || process.env.FIREBASE_KEY);
     } else {
       // Local development fallback: read from file
       serviceAccount = require("./firebase-key.json");
