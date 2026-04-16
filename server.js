@@ -660,6 +660,33 @@ cron.schedule("*/30 * * * *", async () => {
 
 
 // ─────────────────────────────────────────────────────────────────
+// ═══════════════════════════════════════════════════════════════
+//  ROUTE: CLEAR ALL ORDERS (test cleanup only)
+//  DELETE /orders/clear
+// ═══════════════════════════════════════════════════════════════
+// ─────────────────────────────────────────────────────────────────
+app.delete("/orders/clear", async (req, res) => {
+  const key = req.headers["x-api-key"];
+  if (process.env.API_KEY && key !== process.env.API_KEY) {
+    return res.status(401).json({ error: "Unauthorized" });
+  }
+  if (!db) return res.status(503).json({ error: "Firebase not configured" });
+
+  try {
+    const snap = await db.collection("orders").get();
+    const batch = db.batch();
+    snap.forEach((d) => batch.delete(d.ref));
+    await batch.commit();
+    log("ORDERS", `🗑️  Cleared ${snap.size} orders`);
+    res.json({ message: "All orders cleared", count: snap.size });
+  } catch (e) {
+    log("ORDERS", "Clear error:", e.message);
+    res.status(500).json({ error: e.message });
+  }
+});
+
+
+// ─────────────────────────────────────────────────────────────────
 // START SERVER
 // ─────────────────────────────────────────────────────────────────
 const PORT = process.env.PORT || 8080;
