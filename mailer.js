@@ -4,6 +4,9 @@ const transporter = nodemailer.createTransport({
   host: 'smtp.gmail.com',
   port: 587,
   secure: false,
+  connectionTimeout: 5000,
+  greetingTimeout: 5000,
+  socketTimeout: 5000,
   auth: {
     user: process.env.GMAIL_USER,
     pass: process.env.GMAIL_APP_PASSWORD,
@@ -14,6 +17,9 @@ async function sendOrderNotification(order) {
   const itemsList = (order.items || [])
     .map(i => `• ${i.name} x${i.qty} — Rs.${i.price}`)
     .join('\n');
+
+  console.log('[MAIL] Attempting send to:', process.env.NOTIFY_EMAIL);
+  console.log('[MAIL] From:', process.env.GMAIL_USER);
 
   const info = await transporter.sendMail({
     from: `"Nikkashi Orders" <${process.env.GMAIL_USER}>`,
@@ -35,7 +41,7 @@ Payment : ${order.paymentStatus || 'Paid'}
 Time    : ${new Date().toLocaleString('en-IN', { timeZone: 'Asia/Kolkata' })}
     `.trim(),
   });
-  console.log('[MAIL] Sent OK:', info.messageId, '→', process.env.NOTIFY_EMAIL);
+  console.log('[MAIL] Sent OK:', info.messageId);
 }
 
 module.exports = { sendOrderNotification };
