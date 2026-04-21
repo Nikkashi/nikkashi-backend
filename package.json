@@ -20,6 +20,7 @@
     "node-cron": "^4.2.1",
     "nodemailer": "^8.0.5",
     "razorpay": "^2.9.6",
+    "resend": "^6.12.2",
     "uuid": "^13.0.0"
   }
 }

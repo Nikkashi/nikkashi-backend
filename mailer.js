@@ -1,17 +1,5 @@
-const nodemailer = require('nodemailer');
-
-const transporter = nodemailer.createTransport({
-  host: 'smtp.gmail.com',
-  port: 587,
-  secure: false,
-  connectionTimeout: 5000,
-  greetingTimeout: 5000,
-  socketTimeout: 5000,
-  auth: {
-    user: process.env.GMAIL_USER,
-    pass: process.env.GMAIL_APP_PASSWORD,
-  },
-});
+const { Resend } = require('resend');
+const resend = new Resend(process.env.RESEND_API_KEY);
 
 async function sendOrderNotification(order) {
   const itemsList = (order.items || [])
@@ -19,10 +7,9 @@ async function sendOrderNotification(order) {
     .join('\n');
 
   console.log('[MAIL] Attempting send to:', process.env.NOTIFY_EMAIL);
-  console.log('[MAIL] From:', process.env.GMAIL_USER);
 
-  const info = await transporter.sendMail({
-    from: `"Nikkashi Orders" <${process.env.GMAIL_USER}>`,
+  const { data, error } = await resend.emails.send({
+    from: 'Nikkashi Orders <onboarding@resend.dev>',
     to: process.env.NOTIFY_EMAIL,
     subject: `New Order #${order.id} — Rs.${order.total}`,
     text: `
@@ -41,7 +28,12 @@ Payment : ${order.paymentStatus || 'Paid'}
 Time    : ${new Date().toLocaleString('en-IN', { timeZone: 'Asia/Kolkata' })}
     `.trim(),
   });
-  console.log('[MAIL] Sent OK:', info.messageId);
+
+  if (error) {
+    console.error('[MAIL] Resend error:', error);
+  } else {
+    console.log('[MAIL] Sent OK:', data.id);
+  }
 }
 
 module.exports = { sendOrderNotification };
