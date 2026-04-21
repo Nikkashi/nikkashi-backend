@@ -1,7 +1,7 @@
 const { Resend } = require('resend');
-const resend = new Resend(process.env.RESEND_API_KEY);
 
 async function sendOrderNotification(order) {
+  const resend = new Resend(process.env.RESEND_API_KEY);
   const itemsList = (order.items || [])
     .map(i => `• ${i.name} x${i.qty} — Rs.${i.price}`)
     .join('\n');
@@ -30,7 +30,7 @@ Time    : ${new Date().toLocaleString('en-IN', { timeZone: 'Asia/Kolkata' })}
   });
 
   if (error) {
-    console.error('[MAIL] Resend error:', error);
+    console.error('[MAIL] Resend error:', JSON.stringify(error));
   } else {
     console.log('[MAIL] Sent OK:', data.id);
   }
