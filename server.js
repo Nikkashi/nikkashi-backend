@@ -14,6 +14,7 @@ const Razorpay  = require("razorpay");
 const { v4: uuidv4 } = require("uuid");
 const cron      = require("node-cron");
 const admin     = require("firebase-admin");
+const { sendOrderNotification } = require("./mailer");
 
 // ─────────────────────────────────────────────────────────────────
 // FIREBASE INIT
@@ -202,6 +203,7 @@ app.post("/create-order", async (req, res) => {
     }
 
     log("ORDER", "Created →", rzpOrder.id);
+    sendOrderNotification({ id: rzpOrder.id, items, total: amount/100, customerName: customer?.name || "Customer", phone: customer?.phone || "N/A", address: customer?.address || "Not provided", paymentStatus: "Pending (Razorpay)" }).catch(e => log("MAIL", "Gmail error:", e.message));
     res.json({
       key:      process.env.RAZORPAY_KEY_ID,
       orderId:  rzpOrder.id,
