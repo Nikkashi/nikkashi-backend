@@ -15,7 +15,7 @@ async function sendOrderNotification(order) {
     .map(i => `• ${i.name} x${i.qty} — Rs.${i.price}`)
     .join('\n');
 
-  await transporter.sendMail({
+  const info = await transporter.sendMail({
     from: `"Nikkashi Orders" <${process.env.GMAIL_USER}>`,
     to: process.env.NOTIFY_EMAIL,
     subject: `New Order #${order.id} — Rs.${order.total}`,
@@ -35,6 +35,7 @@ Payment : ${order.paymentStatus || 'Paid'}
 Time    : ${new Date().toLocaleString('en-IN', { timeZone: 'Asia/Kolkata' })}
     `.trim(),
   });
+  console.log('[MAIL] Sent OK:', info.messageId, '→', process.env.NOTIFY_EMAIL);
 }
 
 module.exports = { sendOrderNotification };
